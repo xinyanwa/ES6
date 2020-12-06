@@ -662,7 +662,7 @@
         prop: 'baz'
     };
     let handler = {
-        ownKesy(target) {
+        ownKeys(target) {
             return Reflect.ownKeys(target).filter(key => key[0] !== '_');
         }
     };
@@ -670,4 +670,94 @@
     for (let key of Object.keys(proxy)) {
         console.log(target[key]);
     }
+    // baz
+
+    // 注意，使用Object.keys()方法时，有三类属性会被ownKeys()方法自动过滤，不会返回
+    /**
+     * 目标对象上不存在的属性
+     * 属性名为Symbol值
+     * 不可遍历(enumerable)的属性
+     */
+    let target = {
+        a:1,
+        b:2,
+        c:3,
+        [Symbol.for('secret')]: '4'
+    };
+    Object.defineProperty(target,'key',{
+        enumerabkle:false,
+        configurable: true,
+        writable: true,
+        value: 'static'
+    });
+    let handler = {
+        ownKeys(target){
+            return ['a','d',Symbol.for('secret'),'key'];
+        }
+    };
+    let proxy = new Proxy(target,handler);
+    Object.keys(proxy);
+    // ["a"]
+    // ownKeys()方法之中，显示返回不存在的属性(d),Symbol值(Symbol.for('secret'))，不可遍历的属性key，结果都被自动过滤了
+
+    // ownKeys()方法还可以拦截Object.getOwnPropertyNames()
+    const p = new Proxy({},{
+        ownKeys:function(target){
+            return ['a','b','c'];
+        }
+    });
+    Object.getOwnPropertyNames(p);
+    // (3) ["a", "b", "c"]
+
+    // for...in循环也收到了ownKeys()方法的拦截
+    const obj = {hello:'world'};
+    const proxy = new Proxy(obj,{
+        ownKeys:function(){
+            return ['a','b'];
+        }
+    });
+    for(let key in proxy){
+        console.log(key);
+    }
+    // 上面代码中，ownKeys()指定返回a和b属性，由于obj没有这两个属性，因此for...in循环不会有任何输出
+
+    // ownKeys()方法返回的数组成员，只能是字符串或者Symbol值，如果有其他类型的值，或者返回的根本不是数组，就会报错
+    const obj = {};
+    const p = new Proxy(obj,{
+        ownKeys(target){
+            return [123,true,undefined,null,{},[]];
+        }
+    });
+    Object.getOwnPropertyNames(p);
+    // VM452:7 Uncaught TypeError: 123 is not a valid property name
+
+    // 如果目标对象自身包含不可配置的属性，该属性必须被ownKeys()方法返回，否则报错
+    const obj = {};
+    Object.defineProperty(obj,'a',{
+        configurable: false,
+        enumerable:true,
+        value: 10
+    });
+    const p = new Proxy(obj,{
+        ownKeys(target){
+            return ['b'];
+        }
+    });
+    Object.getOwnPropertyNames(p);
+    // VM526:12 Uncaught TypeError: 'ownKeys' on proxy: trap result did not include 'a'
+    // 上面代码中，obj对象的a属性不可配置的，这时候ownKeys()方法返回的数组之中，必须包含a，否则会报错
+
+    // 另外，如果目标对象时不可扩展的，这时ownKeys()方法返回的数组之中，必须包含原对象的所有属性，且不能包含多余属性，否则就会报错
+    const obj = {
+        a: 1
+    };
+    Object.preventExtensions(obj);
+    const p = new Proxy(obj,{
+        ownKeys(target){
+            return ['a','b'];
+        }
+    });
+    Object.getOwnPropertyNames(p);
+    // VM600:10 Uncaught TypeError: 'ownKeys' on proxy: trap returned extra keys but proxy target is non-extensible
+    // 上面代码中，obj对象是不可扩展的，这时ownKeys()方法返回的数组中，包含了obj对多余属性b，所有导致报错
 }
